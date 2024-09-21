@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Information Hiding: Steganography with JavaScript</title>
+ 
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="http://www.peter-eigenschink.at/blog/favicon.ico" type="image/x-icon" rel="shortcut icon">
+    <script src="/build/mammoth.browser.min.js"></script>
+    <script src="/build/exportword.js"></script> <!-- Thư viện docx -->
+   <link rel="stylesheet" href="/css/background.css">
+  
+</head>
+<body>
+    <div id="main">
+        <h1>Giấu tin nhóm 4</h1>
+
+        <div id="left">
+            <h2>Ảnh:</h2>
+            <input id="file" type="file" accept=".png,.jpg" />
+            <h2>Văn bản:</h2>
+            <input type="file" id="textFile" accept=".txt,.docx" />
+            <textarea id="text"></textarea>
+            <div class="btns">
+                <span id="hide" class="btn">Nhúng</span>
+                <span id="read" class="btn">Đọc</span>
+            </div>
+        </div>
+
+        <div id="right">
+            <div class="image-columns">
+                <div class="image-container">
+                    <h2>Ảnh gốc:</h2>
+                    <img id="img" src="" />
+                </div>
+                <div class="image-container">
+                    <h2>Ảnh nhúng:</h2>
+                    <img id="cover" src="" />
+                    <a id="download" download="anh.png">Tải xuống</a> <!-- Nút tải xuống sẽ được hiển thị sau khi nhúng -->
+                    <div class="note"></div>
+                </div>
+            </div>
+            <div id="messageArea" class="invisible">
+                <h2>Mã:</h2>
+                <div id="message"></div>
+            </div>
+            <!-- Nút tải file Word -->
+            <a id="downloadWord" style="display:none;" class="btn">Tải về Word</a>
+        </div>
+
+        <div class="clear"></div>
+
+        <div class="footer">
+            <a>Thành Viên: </a> 
+        </div>
+    </div>
+
+    <script type="text/javascript" src="/build/steganography.js"></script>
+    <script type="text/javascript">
+        function handleFileSelect(evt) {
+            var img = document.getElementById("img");
+            var cover = document.getElementById("cover");
+            var message = document.getElementById("message");
+            var files = evt.target.files;
+
+            for (var i = 0, f; f = files[i]; i++) {
+                if (!f.type.match('image.*')) continue;
+                var reader = new FileReader();
+                reader.onload = (function(theFile) {
+                    return function(e) {
+                        img.src = e.target.result;
+                        img.title = escape(theFile.name);
+                        cover.src = "";
+                        message.innerHTML = "";
+                        message.parentNode.classList.add("invisible");
+                        updateCapacity();
+                    };
+                })(f);
+                reader.readAsDataURL(f);
+            }
+        }
+
+        function handleTextFileSelect(evt) {
+            var file = evt.target.files[0];
+            var textarea = document.getElementById("text");
+        
+            if (file && file.name.endsWith('.txt')) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    textarea.value = e.target.result;
+                    updateCapacity();
+                };
+                reader.readAsText(file);
+            } else if (file && file.name.endsWith('.docx')) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    mammoth.extractRawText({ arrayBuffer: e.target.result })
+                        .then(function(result) {
+                            textarea.value = result.value; // Kết quả là nội dung văn bản
+                            updateCapacity();
+                        })
+                        .catch(function(err) {
+                            console.error("Error reading DOCX file: ", err);
+                        });
+                };
+                reader.readAsArrayBuffer(file); // DOCX yêu cầu ArrayBuffer
+            }
+        }
+        
+
+        function hide() {
+            var img = document.getElementById("img");
+            var cover = document.getElementById("cover");
+            var textarea = document.getElementById("text");
+            var download = document.getElementById("download");
+
+            if (img && textarea) {
+                cover.src = steg.encode(textarea.value, img);
+                download.href = cover.src.replace("image/png", "image/octet-stream");
+                download.style.display = "block"; // Hiển thị nút tải xuống khi nhúng xong
+            }
+        }
+
+        function read() {
+            var img = document.getElementById("img");
+            var message = document.getElementById("message");
+            var textarea = document.getElementById("text");
+            var downloadWord = document.getElementById("downloadWord");
+
+            if (img && textarea) {
+                message.innerHTML = steg.decode(img);
+                if (message.innerHTML !== "") {
+                    message.parentNode.classList.remove("invisible");
+                    textarea.value = message.innerHTML;
+                    updateCapacity();
+                    downloadWord.style.display = "inline-block"; // Hiển thị nút tải về Word khi đọc xong
+                } else {
+                    message.parentNode.classList.add("invisible");
+                    downloadWord.style.display = "none"; // Ẩn nút nếu không có nội dung
+                }
+            }
+        }
+
+        function updateCapacity() {
+            var textarea = document.getElementById('text');
+            var img = document.getElementById('img');
+            var note = document.querySelector(".note");
+            if (textarea && img) {
+                note.innerHTML = steg.getHidingCapacity(img) + " characters available";
+            }
+        }
+
+        function exportToWord() {
+            var messageText = document.getElementById("message").innerText;
+            if (messageText) {
+                const doc = new docx.Document({
+                    sections: [
+                        {
+                            properties: {},
+                            children: [
+                                new docx.Paragraph(messageText),
+                            ],
+                        },
+                    ],
+                });
+
+                // Tạo file Word và tải về
+                docx.Packer.toBlob(doc).then((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'hidden_message.docx';
+                    link.click();
+                });
+            }
+        }
+
+        window.onload = function() {
+            document.getElementById('file').addEventListener('change', handleFileSelect, false);
+            document.getElementById('textFile').addEventListener('change', handleTextFileSelect, false);
+            document.getElementById('hide').addEventListener('click', hide, false);
+            document.getElementById('read').addEventListener('click', read, false);
+            document.getElementById('downloadWord').addEventListener('click', exportToWord, false);
+            document.getElementById('text').addEventListener('keyup', updateCapacity, false);
+            updateCapacity();
+        };
+    </script>
+</body>
+</html>
